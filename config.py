@@ -12,9 +12,9 @@ BASE_URL = "https://www.woman.ru"
 FORUM_SECTIONS = [
     "relations/men",          # Мужчина и женщина
     "relations/sex",          # Секс
-    "psycho/medley6",         # Психология (общий раздел)
-    "psycho/socialization",   # Социализация
     "relations/family",       # Семья — оставляем, проверим
+    "psycho/socialization",   # Социализация
+    "psycho/career"           # Работа
 ]
 
 TARGET_LEMMA = "мужчина"
@@ -24,7 +24,7 @@ TARGET_WORDFORMS = [
 ]
 
 DEFAULT_POST_LIMIT = 1000
-MAX_THREADS_PER_SECTION = 30
+MAX_THREADS_PER_SECTION = 50
 MAX_PAGES_PER_THREAD = 4
 
 REQUEST_DELAY_MIN = 1.8
@@ -39,8 +39,7 @@ HEADERS = {
     "Referer": "https://www.woman.ru/",
 }
 
-OUTPUT_DIR      = "data/raw"
-PROCESSED_DIR   = "data/processed"
+OUTPUT_DIR      = "data"
 LOG_DIR         = "logs"
 
 OUTPUT_FORMATS  = ["csv", "json", "txt"]

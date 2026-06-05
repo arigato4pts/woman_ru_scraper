@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from config import (
-    OUTPUT_DIR, PROCESSED_DIR, LOG_DIR,
+    OUTPUT_DIR, LOG_DIR,
     OUTPUT_FORMATS, OUTPUT_FILENAME, OUTPUT_FIELDS,
     TARGET_WORDFORMS,
 )
@@ -76,7 +76,6 @@ def extract_context(text: str, window: int = 70) -> List[str]:
 
 def _ensure_dirs():
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    Path(PROCESSED_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def save_csv(posts: List[Dict[str, Any]], filename: str | None = None) -> Path:
