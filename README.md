@@ -90,18 +90,6 @@ python scraper.py --limit 100 --output-dir data/run2 --filename corpus_v2
 | `--output-dir PATH` | str | `data/raw` | Папка для сохранения |
 | `--filename NAME` | str | `woman_ru_muzchina` | Имя файла без расширения |
 
-### Рабочие разделы форума
-
-| Слаг | Раздел |
-|------|--------|
-| `relations/men` | Мужчина и женщина |
-| `relations/sex` | Секс |
-| `relations/family` | Семья |
-| `psycho/medley6` | Психология (общий) |
-| `psycho/socialization` | Социализация |
-
-> Список можно расширить или сократить в `config.py → FORUM_SECTIONS`.
-
 ---
 
 ## Настройка через config.py
