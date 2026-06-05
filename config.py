@@ -1,87 +1,52 @@
 """
 config.py — Настройки скрейпера woman.ru
-========================================
-Все параметры, влияющие на поведение скрипта, вынесены сюда.
-Менять только этот файл — остальной код трогать не нужно.
 """
-
-# ─── Целевой сайт ────────────────────────────────────────────────────────────
 
 BASE_URL = "https://www.woman.ru"
 
-# Разделы форума для обхода (slug после BASE_URL/forum/)
-# Полный список: https://www.woman.ru/forum/
+# Реальные URL-паттерны, подтверждённые из поисковой выдачи:
+# woman.ru/relations/men/thread-...
+# woman.ru/relations/sex/thread-...
+# woman.ru/psycho/medley6/thread-...
+# woman.ru/psycho/socialization/thread-...
 FORUM_SECTIONS = [
-    "relations",       # Отношения
-    "sex",             # Секс
-    "family",          # Семья
-    "psychology",      # Психология
-    "kids",            # Дети
+    "relations/men",          # Мужчина и женщина
+    "relations/sex",          # Секс
+    "psycho/medley6",         # Психология (общий раздел)
+    "psycho/socialization",   # Социализация
+    "relations/family",       # Семья — оставляем, проверим
 ]
 
-# ─── Ключевые слова (фильтрация на лету) ─────────────────────────────────────
-
-# Пост попадает в выборку, если содержит хотя бы одну из этих форм.
-# Поиск регистронезависимый.
 TARGET_LEMMA = "мужчина"
 TARGET_WORDFORMS = [
-    "мужчина",
-    "мужчины",
-    "мужчине",
-    "мужчину",
-    "мужчиной",
-    "мужчин",
-    "мужчинам",
-    "мужчинами",
-    "мужчинах",
+    "мужчина", "мужчины", "мужчине", "мужчину", "мужчиной",
+    "мужчин", "мужчинам", "мужчинами", "мужчинах",
 ]
 
-# ─── Лимиты сбора ────────────────────────────────────────────────────────────
+DEFAULT_POST_LIMIT = 1000
+MAX_THREADS_PER_SECTION = 30
+MAX_PAGES_PER_THREAD = 4
 
-# Максимальное число постов/комментариев, которые нужно сохранить.
-# Переопределяется флагом --limit в командной строке.
-DEFAULT_POST_LIMIT = 1000          # сколько постов собрать по умолчанию
-MAX_THREADS_PER_SECTION = 200      # максимум тредов, просматриваемых в разделе
-MAX_PAGES_PER_THREAD = 10          # максимум страниц пагинации в одном треде
-
-# ─── Сетевые параметры ───────────────────────────────────────────────────────
-
-REQUEST_DELAY_MIN = 1.5   # секунд (минимум между запросами)
-REQUEST_DELAY_MAX = 3.5   # секунд (максимум между запросами)
-REQUEST_TIMEOUT  = 15     # секунд ожидания ответа
-MAX_RETRIES      = 3      # попыток при временной ошибке
+REQUEST_DELAY_MIN = 1.8
+REQUEST_DELAY_MAX = 3.5
+REQUEST_TIMEOUT  = 25
+MAX_RETRIES      = 3
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Referer": "https://www.woman.ru/",
 }
 
-# ─── Вывод данных ────────────────────────────────────────────────────────────
-
-OUTPUT_DIR      = "data/raw"           # папка для сырых данных
-PROCESSED_DIR   = "data/processed"    # папка после дедупликации/очистки
+OUTPUT_DIR      = "data/raw"
+PROCESSED_DIR   = "data/processed"
 LOG_DIR         = "logs"
 
-# Форматы сохранения: "csv", "json", "txt" — любое сочетание
 OUTPUT_FORMATS  = ["csv", "json", "txt"]
-
-# Имя файла без расширения (расширение добавляется автоматически)
 OUTPUT_FILENAME = "woman_ru_muzchina"
 
-# Поля, которые записываются в CSV/JSON
-# Доступные поля: post_id, thread_id, thread_title, section,
-#                 post_date, post_text, url
 OUTPUT_FIELDS = [
-    "post_id",
-    "thread_id",
-    "thread_title",
-    "section",
-    "post_date",
-    "post_text",
-    "url",
+    "post_id", "thread_id", "thread_title", "section",
+    "post_date", "post_text", "contexts", "url",
 ]
