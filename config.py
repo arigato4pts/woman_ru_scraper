@@ -4,17 +4,9 @@ config.py — Настройки скрейпера woman.ru
 
 BASE_URL = "https://www.woman.ru"
 
-# Реальные URL-паттерны, подтверждённые из поисковой выдачи:
-# woman.ru/relations/men/thread-...
-# woman.ru/relations/sex/thread-...
-# woman.ru/psycho/medley6/thread-...
-# woman.ru/psycho/socialization/thread-...
+
 FORUM_SECTIONS = [
-    "relations/men",          # Мужчина и женщина
-    "relations/sex",          # Секс
-    "relations/family",       # Семья — оставляем, проверим
-    "psycho/socialization",   # Социализация
-    "psycho/career"           # Работа
+    "relations/men",   # confirmed working
 ]
 
 TARGET_LEMMA = "мужчина"
@@ -27,8 +19,8 @@ DEFAULT_POST_LIMIT = 1000
 MAX_THREADS_PER_SECTION = 50
 MAX_PAGES_PER_THREAD = 4
 
-REQUEST_DELAY_MIN = 1.8
-REQUEST_DELAY_MAX = 3.5
+REQUEST_DELAY_MIN = 1.5
+REQUEST_DELAY_MAX = 3.0
 REQUEST_TIMEOUT  = 25
 MAX_RETRIES      = 3
 
@@ -40,6 +32,7 @@ HEADERS = {
 }
 
 OUTPUT_DIR      = "data"
+PROCESSED_DIR   = "data"
 LOG_DIR         = "logs"
 
 OUTPUT_FORMATS  = ["csv", "json", "txt"]

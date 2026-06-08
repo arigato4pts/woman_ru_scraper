@@ -27,10 +27,10 @@ def setup_logger(name: str = "woman_scraper") -> logging.Logger:
     logger.setLevel(logging.DEBUG)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
     ch = logging.StreamHandler()
-    ch.setLevel(logging.WARNING)   # консоль: только ошибки
+    ch.setLevel(logging.WARNING)
     ch.setFormatter(fmt)
     fh = logging.FileHandler(log_path, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)     # файл: всё
+    fh.setLevel(logging.DEBUG)
     fh.setFormatter(fmt)
     logger.addHandler(ch)
     logger.addHandler(fh)

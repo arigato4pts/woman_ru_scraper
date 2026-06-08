@@ -256,8 +256,8 @@ def _extract_posts_from_page(soup: BeautifulSoup, thread_url: str,
     # Специфичные селекторы → широкий fallback
     post_blocks: List[Tag] = []
     for selector in [
-        "div.card__comment",   # основной селектор постов (подтверждён диагностикой)
-        "div.card__text",      # текст первого поста / ОП
+        "div.card__comment",
+        "div.card__text",
         "div.b-topic__message",
         "li.b-messages__item",
         "div.forum-message",
