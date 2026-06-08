@@ -1,22 +1,25 @@
-# woman.ru Scraper — Collocation Corpus: "мужчина"
+# woman.ru Scraper — Корпус коллокаций слова «мужчина»
 
-> **Academic project** · Linguistic Systems Practicum  
-> Goal: collect a corpus of user posts from woman.ru forum to build  
-> a semantic portrait of the word **"мужчина"** (man) through collocations.
+> **Учебный проект** · Практикум по лингвистическим системам  
+> Цель: сбор корпуса постов с форума woman.ru для построения  
+> семантического портрета слова **«мужчина»** по коллокациям.
 
 ---
 
-## Project Structure
+## Структура проекта
 
 ```
 woman_ru_scraper/
 │
-├── scraper.py          # Main script — run this
-├── config.py           # All settings (limits, sections, filters)
-├── utils.py            # Helper functions (text cleaning, saving, logging)
+├── scraper.py          # Основной скрипт — запускать его
+├── config.py           # Все настройки (лимиты, разделы, фильтры)
+├── utils.py            # Вспомогательные функции (текст, сохранение, лог)
 │
-├── data/               # Output files (CSV, JSON, TXT)
-├── logs/               # Run logs (debug detail)
+├── data/
+│   ├── raw/            # Результаты скрейпинга (в .gitignore)
+│   └── processed/      # Очищенные данные
+│
+├── logs/               # Журналы запусков (в .gitignore)
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -24,10 +27,10 @@ woman_ru_scraper/
 
 ---
 
-## Installation
+## Установка
 
 ```bash
-git clone https://github.com/<your-account>/woman-ru-scraper.git
+git clone https://github.com/<ваш-аккаунт>/woman-ru-scraper.git
 cd woman-ru-scraper
 
 python -m venv venv
@@ -41,182 +44,156 @@ pip install -r requirements.txt
 
 ---
 
-## Usage
+## Быстрый старт
 
 ```bash
-# Test run — 10 posts
+# Тестовый запуск — 10 постов
 python scraper.py --limit 10
 
-# Standard run — 100 posts via search (default mode)
+# Целевой запуск — 100 постов (~120–150 контекстов)
 python scraper.py --limit 100
 
-# Use section directly instead of search
-python scraper.py --limit 100 --no-search --sections relations/men
+# Один раздел — удобно для отладки
+python scraper.py --limit 20 --sections relations/men
 
-# Collect all posts without keyword filter
+# Несколько разделов вручную
+python scraper.py --limit 100 --sections relations/men relations/sex psycho/medley6
+
+# Все посты без фильтрации по ключевому слову
 python scraper.py --limit 50 --no-filter
 
-# Custom output folder and filename
-python scraper.py --limit 100 --output-dir data --filename corpus_v2
+# Своя папка и имя файла
+python scraper.py --limit 100 --output-dir data/run2 --filename corpus_v2
 ```
 
-### Console output
+### Как выглядит вывод при запуске
 
 ```
-  Scraping started, searching contexts: 100
-
-  ██████████ 100/100 (100%)
-
-  Collected: 100 in 47 seconds
+22:06:34 Старт | лимит: 10
+Квоты: {'relations/men': 2, 'relations/sex': 2, 'psycho/medley6': 2, 'psycho/socialization': 2, 'relations/family': 2}
+  ████░░░░░░ 4/10 (40%)
+  ████████░░ 8/10 (80%)
+  ██████████ 10/10 (100%)
+22:07:25 Итого собрано: 10 постов
+Данные сохранены → data\raw\woman_ru_muzchina.txt, ...
 ```
 
 ---
 
-## CLI Parameters
+## Параметры командной строки
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `--limit N` | int | 1000 | Maximum number of posts to collect |
-| `--sections S1 S2 …` | str+ | from config.py | Forum section slugs (fallback only) |
-| `--no-filter` | flag | off | Collect all posts, skip keyword filter |
-| `--no-search` | flag | off | Skip search API, use sections directly |
-| `--output-dir PATH` | str | `data` | Output folder |
-| `--filename NAME` | str | `woman_ru_muzchina` | Output filename (no extension) |
+| Параметр | Тип | По умолчанию | Описание |
+|----------|-----|--------------|----------|
+| `--limit N` | int | 1000 | Максимальное число постов |
+| `--sections S1 S2 …` | str+ | из config.py | Слаги разделов форума |
+| `--no-filter` | флаг | выкл | Отключить фильтр по «мужчина» |
+| `--output-dir PATH` | str | `data/raw` | Папка для сохранения |
+| `--filename NAME` | str | `woman_ru_muzchina` | Имя файла без расширения |
+
+### Рабочие разделы форума
+
+| Слаг | Раздел |
+|------|--------|
+| `relations/men` | Мужчина и женщина |
+| `relations/sex` | Секс |
+| `relations/family` | Семья |
+| `psycho/medley6` | Психология (общий) |
+| `psycho/socialization` | Социализация |
+
+> Список можно расширить или сократить в `config.py → FORUM_SECTIONS`.
 
 ---
 
-## Configuration — config.py
+## Настройка через config.py
 
-Single file to control all parameters. No need to edit `scraper.py`.
+Единая точка управления всеми параметрами — `config.py`.  
+Менять `scraper.py` не нужно.
 
 ```python
-# Collection limits
-DEFAULT_POST_LIMIT     = 1000  # default number of posts
-MAX_THREADS_PER_SECTION = 50   # threads to scan per section
-MAX_PAGES_PER_THREAD   = 4     # pagination depth per thread
+# Лимиты
+DEFAULT_POST_LIMIT = 1000       # постов по умолчанию
+MAX_THREADS_PER_SECTION = 30    # тредов на раздел
+MAX_PAGES_PER_THREAD = 4        # страниц пагинации в треде
 
-# Politeness settings
-REQUEST_DELAY_MIN = 1.5  # minimum seconds between requests
-REQUEST_DELAY_MAX = 3.0  # maximum seconds between requests
-MAX_RETRIES       = 3    # retries on network error
+# Скорость (вежливость к серверу)
+REQUEST_DELAY_MIN = 1.8   # сек минимум между запросами
+REQUEST_DELAY_MAX = 3.5   # сек максимум между запросами
+MAX_RETRIES = 3           # попыток при сетевой ошибке
 
-# Output formats — remove any you don't need
-OUTPUT_FORMATS = ["csv", "json", "txt"]
+# Форматы сохранения
+OUTPUT_FORMATS = ["csv", "json", "txt"]   # убери ненужные
 
-# Target word forms — extend if needed
+# Целевые словоформы (расширяемый список)
 TARGET_WORDFORMS = ["мужчина", "мужчины", "мужчине", ...]
 ```
 
-### Confirmed working sections
+---
 
-| Slug | Section |
-|------|---------|
-| `relations/men` | Men and Women ✓ |
+## Формат выходных данных
 
-> The primary thread source is the site's search API
-> (`/search/?q=мужчина&where=forum_threads`), which returns
-> results from across all forum sections. The sections list
-> above is used as a fallback if the search yields fewer posts than the limit.
+После запуска в `data/raw/` появляются четыре файла:
+
+### `*_contexts.txt` — только контексты (главный файл для лингвистического анализа)
+
+Каждая строка — один фрагмент текста вокруг вхождения слова «мужчина» (±70 символов).  
+Никакой разметки, никаких метаданных — чистые строки:
+
+```
+Интересно мнение женщин почему мужчина уходит к другой женщине?
+ажный момент - конкуренция за его деньги. А сам по себе мужчина женщине не нужен.
+Не будет давать внимание и заботу мужчина, у которого наглая и властная мать.
+```
+
+### `*.txt` — полные данные с метаданными
+
+Каждый пост: ID, тред, раздел, дата, URL, полный текст и список его контекстов.
+
+### `*.csv` — таблица (UTF-8 BOM, открывается в Excel)
+
+Поля: `post_id`, `thread_id`, `thread_title`, `section`, `post_date`, `post_text`, `contexts`, `url`.
+
+### `*.json` — структурированные данные
+
+Массив объектов с теми же полями.
 
 ---
 
-## Output Files
-
-All files are saved to `data/` (configurable via `--output-dir`).
-
-### `*_contexts.txt` — contexts only (primary file for linguistic analysis)
-
-One line = one sentence containing the target word.
-No markup, no metadata — clean text ready for collocation analysis:
+## Алгоритм работы
 
 ```
-Мужчина-скорпион, мужчина-рак, мужчина -весы...почему они пропадают,..не звонят...
-А по мне так если мужчина любит, он будет и звонить, и окружать вниманием.
-Не всегда внимание мужчины = заинтересованности в женщине.
+run_scraper(limit, sections)
+│
+├── Распределить лимит по разделам поровну
+│   (например, limit=10, разделов=5 → по 2 на каждый)
+│
+├── Первый проход:
+│   for section in sections:
+│   │   iter_thread_urls()     — список тредов (пагинация)
+│   │   iter_posts_in_thread() — посты (пагинация внутри треда)
+│   │   contains_target()      — фильтр по словоформам
+│   │   extract_context()      — извлечение контекстного окна ±70 символов
+│   │
+│   └── если раздел недодал посты → дефицит передаётся следующему разделу
+│
+└── Второй проход (добор):
+    если после всех разделов < лимита →
+    пройти по рабочим разделам ещё раз, пока не наберём нужное количество
 ```
 
-### `*.txt` — posts with their contexts
+**Два формата URL тредов** обрабатываются одновременно:
+- `/relations/men/thread-pochemu-muzhchina-ukhodit-id6432553/`
+- `/psycho/socialization/thread/5622354/`
 
-Each post block: full cleaned text followed by bullet-point context sentences.
-No IDs, dates, usernames or technical fields.
+**Дедупликация:** каждый пост получает MD5-хеш из URL + даты + первых 100 символов текста. Повторные посты пропускаются.
 
-```
-────────────────────────────────────────────────────────────────────────────────
-Мужчина-скорпион, мужчина-рак, мужчина -весы...почему они пропадают,..не звонят...
-Можно найти много отговорок. А по мне так если мужчина любит, он будет и звонить.
-
-  • Мужчина-скорпион, мужчина-рак, мужчина -весы...почему они пропадают,..не звонят...
-  • А по мне так если мужчина любит, он будет и звонить, и окружать вниманием.
-
-────────────────────────────────────────────────────────────────────────────────
-```
-
-### `*.csv` — tabular data (UTF-8 BOM, opens correctly in Excel)
-
-Fields: `post_id`, `thread_id`, `thread_title`, `section`, `post_date`, `post_text`, `contexts`, `url`.
-
-### `*.json` — structured data
-
-Array of objects with the same fields as CSV.
+**Вежливый режим:** случайная пауза 1.8–3.5 сек между запросами, экспоненциальный backoff при сетевых ошибках.
 
 ---
 
-## How It Works
+## Логирование
 
-```
-run_scraper(limit)
-│
-├── Step 1 — Search API (primary source):
-│   GET /search/?q=мужчина&where=forum_threads&sort=relevance&page=N
-│   → collect thread URLs from search results pages
-│   → for each thread URL:
-│       iter_posts_in_thread() — paginate through the thread
-│           _extract_posts_from_page() — find post blocks via CSS selectors
-│           _extract_pure_text() — strip junk tags from DOM
-│           _strip_metadata() — remove dates, usernames, quote headers via regex
-│
-├── Step 2 — Fallback (if search yields fewer posts than limit):
-│   → iterate FORUM_SECTIONS from config.py
-│   → filter thread links to current section only (prevents sidebar bleed)
-│
-└── For each post:
-    ├── contains_target()  — check for any target word form
-    ├── extract_context()  — split into sentences, keep those with target word
-    ├── post-level dedup   — MD5 of thread URL + first 120 chars of text
-    └── context-level dedup — global set, identical sentences never repeat
-```
-
-### Text cleaning pipeline
-
-Raw HTML text goes through several cleaning stages before any context is extracted:
-
-1. **DOM removal** — junk tags stripped before `.get_text()`:
-   navigation, pagination, breadcrumbs, username/date elements, related-thread blocks
-2. **Regex cleaning** — applied to the raw string:
-   - `Гость [12345] 21 августа 2020, 16:33 #9` → removed
-   - `5. Username | 01.03.2011, 11:55:36 QuotedNick` → removed (inline quotes)
-   - `0 0 Ответить` → removed (like/reply counters)
-   - `Похожие темы …` → removed (related threads block)
-   - `[123456]`, `#12` → removed (leftover IDs and post numbers)
-3. **Sentence splitting** — text split on `.`, `!`, `?`, newlines
-4. **Target filtering** — only sentences containing a target word form are kept
-
-### Deduplication
-
-Operates at two independent levels:
-
-- **Post level**: MD5 hash of `thread_url + text[:120]` — prevents the same post
-  from being added twice if it appears in multiple search result pages
-- **Context level**: global `set` across the entire run — the same sentence
-  is never written to the output file more than once, even if it appears
-  in posts from different threads
-
----
-
-## Logging
-
-The console shows only warnings and errors.  
-Full debug output (every selector match, every skipped post) is written to:
+В консоль выводятся только предупреждения и ошибки (сетевые сбои).  
+Полный лог (DEBUG-уровень, все шаги) пишется в файл:
 
 ```
 logs/scraper_YYYYMMDD_HHMMSS.log
@@ -224,23 +201,23 @@ logs/scraper_YYYYMMDD_HHMMSS.log
 
 ---
 
-## Dependencies
+## Зависимости
 
-| Library | Purpose |
-|---------|---------|
-| `requests` | HTTP requests |
-| `beautifulsoup4` | HTML parsing |
-| `lxml` | Fast HTML parser backend |
+| Библиотека | Назначение |
+|-----------|-----------|
+| `requests` | HTTP-запросы |
+| `beautifulsoup4` | Парсинг HTML |
+| `lxml` | Быстрый HTML-парсер |
 
 Python ≥ 3.10
 
 ---
 
-## Ethics
+## Этика и право
 
-- This script is used exclusively for academic research purposes.
-- Random delays between requests minimise load on the server.
-- Only publicly available forum texts are collected.
-- No personal user data (names, avatars, emails) is stored.
-- Collected data is kept locally and not redistributed.
-- Before large-scale collection, review `https://www.woman.ru/robots.txt`.
+- Скрипт используется исключительно в учебных целях.
+- Задержки между запросами минимизируют нагрузку на сервер.
+- Собираются только общедоступные тексты публичного форума.
+- Личные данные пользователей (имена, аватары) не собираются.
+- Данные хранятся локально и не публикуются.
+- Перед масштабным сбором рекомендуется проверить `https://www.woman.ru/robots.txt`.
