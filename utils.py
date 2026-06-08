@@ -1,5 +1,5 @@
 """
-utils.py — Вспомогательные функции
+utils.py — Helper functions
 """
 
 import csv
@@ -26,13 +26,11 @@ def setup_logger(name: str = "woman_scraper") -> logging.Logger:
         return logger
     logger.setLevel(logging.DEBUG)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    # Консоль: только WARNING и выше (ошибки сети и т.п.)
     ch = logging.StreamHandler()
-    ch.setLevel(logging.WARNING)
+    ch.setLevel(logging.WARNING)   # консоль: только ошибки
     ch.setFormatter(fmt)
-    # Файл: всё
     fh = logging.FileHandler(log_path, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)     # файл: всё
     fh.setFormatter(fmt)
     logger.addHandler(ch)
     logger.addHandler(fh)
@@ -56,22 +54,29 @@ def contains_target(text: str) -> bool:
     return False
 
 
-def extract_context(text: str, window: int = 70) -> List[str]:
+def extract_context(text: str) -> List[str]:
+    """
+    Returns sentences containing the target word.
+    One sentence = one context line. No overlapping windows, no duplicates.
+    """
     if not text:
         return []
-    lower = text.lower()
-    contexts = []
+    sentences = re.split(r'(?<=[.!?])\s+|[\n]+', text)
+    result = []
     seen = set()
-    for form in TARGET_WORDFORMS:
-        pattern = rf"(?<![а-яёА-ЯЁ]){re.escape(form)}(?![а-яёА-ЯЁ])"
-        for m in re.finditer(pattern, lower):
-            start = max(0, m.start() - window)
-            end = min(len(text), m.end() + window)
-            ctx = text[start:end].strip()
-            if ctx and ctx not in seen:
-                seen.add(ctx)
-                contexts.append(ctx)
-    return contexts
+    for sent in sentences:
+        sent = sent.strip()
+        if len(sent) < 15:
+            continue
+        lower = sent.lower()
+        for form in TARGET_WORDFORMS:
+            pattern = rf"(?<![а-яёА-ЯЁ]){re.escape(form)}(?![а-яёА-ЯЁ])"
+            if re.search(pattern, lower):
+                if sent not in seen:
+                    seen.add(sent)
+                    result.append(sent)
+                break
+    return result
 
 
 def _ensure_dirs():
@@ -98,9 +103,9 @@ def save_json(posts: List[Dict[str, Any]], filename: str | None = None) -> Path:
 
 def save_txt(posts: List[Dict[str, Any]], filename: str | None = None) -> Path:
     """
-    Два файла:
-      <filename>.txt          — полные данные (метаданные + текст + контексты)
-      <filename>_contexts.txt — только строки контекстов, без разметки
+    Two output files:
+      <filename>.txt          — full data with metadata
+      <filename>_contexts.txt — context strings only, one per line
     """
     _ensure_dirs()
     base = filename or OUTPUT_FILENAME
@@ -110,20 +115,13 @@ def save_txt(posts: List[Dict[str, Any]], filename: str | None = None) -> Path:
     with open(full_path, "w", encoding="utf-8") as f:
         for p in posts:
             f.write(f"{sep}\n")
-            f.write(f"ID:     {p.get('post_id', '')}\n")
-            f.write(f"Тред:   {p.get('thread_title', '')}\n")
-            f.write(f"Раздел: {p.get('section', '')}\n")
-            f.write(f"Дата:   {p.get('post_date', '')}\n")
-            f.write(f"URL:    {p.get('url', '')}\n\n")
             f.write(f"{p.get('post_text', '')}\n\n")
-            ctxs = p.get("contexts", [])
-            if ctxs:
-                f.write(f"[контексты: {len(ctxs)}]\n")
-                for ctx in ctxs:
-                    f.write(f"  • {ctx}\n")
+            for ctx in p.get("contexts", []):
+                f.write(f"  • {ctx}\n")
             f.write("\n")
         f.write(f"{sep}\n")
 
+    # Contexts-only file — clean lines, no markup
     ctx_path = Path(OUTPUT_DIR) / f"{base}_contexts.txt"
     with open(ctx_path, "w", encoding="utf-8") as f:
         for p in posts:

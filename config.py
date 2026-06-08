@@ -11,10 +11,10 @@ BASE_URL = "https://www.woman.ru"
 # woman.ru/psycho/socialization/thread-...
 FORUM_SECTIONS = [
     "relations/men",          # Мужчина и женщина
-    # "relations/sex",          # Секс
-    # "relations/family",       # Семья — оставляем, проверим
-    # "psycho/socialization",   # Социализация
-    # "psycho/career"           # Работа
+    "relations/sex",          # Секс
+    "relations/family",       # Семья — оставляем, проверим
+    "psycho/socialization",   # Социализация
+    "psycho/career"           # Работа
 ]
 
 TARGET_LEMMA = "мужчина"

@@ -1,5 +1,5 @@
 """
-scraper.py — Основной скрипт сбора данных woman.ru
+scraper.py — Сбор контекстов слова «мужчина» с форума woman.ru
 """
 
 import argparse
@@ -10,7 +10,7 @@ import time
 from typing import Iterator, Dict, Any, List, Optional
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 import config
 from utils import (
@@ -24,6 +24,28 @@ from utils import (
 
 logger = setup_logger()
 
+# ─── Regex для удаления метаданных из текста поста ───────────────────────────
+# Убираем: "Гость [12345] 21 августа 2020, 16:33 #9"
+_META_RE = re.compile(
+    r"([А-ЯЁа-яёA-Za-z][\w\s\-]*\s*\[\d+\]\s*)?"
+    r"\d{1,2}\s+[а-яА-Я]+\s+\d{4},?\s*\d{1,2}:\d{2}"
+    r"(\s*#\d+)?"
+)
+
+# Убираем: "0 0 Ответить", "1 2 Ответить"
+_REPLY_RE = re.compile(r"\b\d+\s+\d+\s+Ответить\b")
+
+# Убираем цитаты формата: "5. Имя | 01.03.2011, 11:55:36 Цитируемый_ник текст"
+_QUOTE_RE = re.compile(r"\d+\.\s+[^|]+\|\s*\d{2}\.\d{2}\.\d{4},?\s*\d{2}:\d{2}:\d{2}\s+\S+\s+")
+
+# Убираем: "Похожие темы ...", списки тем с числом ответов
+_SIMILAR_RE = re.compile(r"Похожие темы.{0,500}", re.DOTALL)
+
+# Убираем: "ХХ ответов", "ХХ ответа" в конце строк (списки тредов)
+_THREAD_LIST_RE = re.compile(r"[^\n]+\d+\s+ответ(а|ов)\s*", re.MULTILINE)
+
+# Минимальная длина чистого текста поста
+_MIN_LEN = 30
 
 # ─── HTTP ────────────────────────────────────────────────────────────────────
 
@@ -46,10 +68,9 @@ def get_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
                 return None
             logger.warning(f"HTTP {code}: {url}")
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Сетевая ошибка ({type(e).__name__}): {url}")
+            logger.warning(f"Network error ({type(e).__name__}): {url}")
         if attempt < config.MAX_RETRIES:
             time.sleep(2 ** attempt)
-    logger.error(f"Не удалось загрузить: {url}")
     return None
 
 
@@ -57,28 +78,150 @@ def polite_delay():
     time.sleep(random.uniform(config.REQUEST_DELAY_MIN, config.REQUEST_DELAY_MAX))
 
 
-# ─── Парсинг тредов ──────────────────────────────────────────────────────────
+# ─── Источники тредов ────────────────────────────────────────────────────────
 
-def _extract_thread_links(soup: BeautifulSoup, section: str) -> List[str]:
-    """
-    Извлекает ссылки на треды ТОЛЬКО текущего раздела.
-    Фильтрует по section чтобы не захватывать боковую панель.
-    """
-    links = set()
-    for a in soup.find_all("a", href=True):
-        href = a.get("href", "").strip()
-        if not href:
-            continue
-        if href.startswith("/"):
-            href = config.BASE_URL + href
-        # Ссылка должна принадлежать текущему разделу
-        if section not in href:
-            continue
-        # Паттерны тредов: thread-slug-idNNN  или  thread/NNN
-        if re.search(r"/thread(?:-[^/]+-id\d+|/\d+)/?", href):
-            links.add(href.split("?")[0].rstrip("/") + "/")
-    return sorted(links)
+def _is_thread_url(href: str) -> bool:
+    return bool(re.search(r"/thread(?:-[^/]+-id\d+|/\d+)/?", href))
 
+
+def iter_thread_urls_from_search(session: requests.Session,
+                                  max_threads: int) -> Iterator[str]:
+    """Треды через поисковую страницу woman.ru по запросу «мужчина»."""
+    seen = set()
+    collected = 0
+    page = 1
+
+    while collected < max_threads:
+        url = (
+            f"{config.BASE_URL}/search/"
+            f"?q=%D0%BC%D1%83%D0%B6%D1%87%D0%B8%D0%BD%D0%B0"
+            f"&where=forum_threads&sort=relevance&page={page}"
+        )
+        soup = get_page(session, url)
+        if soup is None:
+            break
+
+        links = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.startswith("/"):
+                href = config.BASE_URL + href
+            if _is_thread_url(href):
+                href = href.split("?")[0].rstrip("/") + "/"
+                if href not in seen:
+                    seen.add(href)
+                    links.append(href)
+
+        if not links:
+            break
+
+        for href in links:
+            if collected >= max_threads:
+                return
+            yield href
+            collected += 1
+
+        page += 1
+        polite_delay()
+
+
+def iter_thread_urls_from_section(session: requests.Session, section: str,
+                                   max_threads: int) -> Iterator[str]:
+    """Fallback: треды из конкретного раздела форума."""
+    section_url = f"{config.BASE_URL}/{section}"
+    seen = set()
+    collected = 0
+    page = 1
+
+    while collected < max_threads:
+        url = section_url if page == 1 else f"{section_url}?page={page}"
+        soup = get_page(session, url)
+        if soup is None:
+            break
+
+        links = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.startswith("/"):
+                href = config.BASE_URL + href
+            if section in href and _is_thread_url(href):
+                href = href.split("?")[0].rstrip("/") + "/"
+                if href not in seen:
+                    seen.add(href)
+                    links.append(href)
+
+        if not links:
+            break
+
+        for href in links:
+            if collected >= max_threads:
+                return
+            yield href
+            collected += 1
+
+        page += 1
+        polite_delay()
+
+
+# ─── Очистка текста поста ────────────────────────────────────────────────────
+
+def _strip_metadata(text: str) -> str:
+    """
+    Удаляет из текста поста все метаданные:
+    - имена и ID пользователей
+    - даты и номера постов
+    - кнопки «Ответить»
+    - блоки «Похожие темы»
+    - списки тредов с числом ответов
+    """
+    text = _SIMILAR_RE.sub("", text)
+    text = _META_RE.sub("", text)
+    text = _REPLY_RE.sub("", text)
+    text = _THREAD_LIST_RE.sub("", text)
+    # Убираем цитаты "5. Имя | дата Ник"
+    text = _QUOTE_RE.sub("", text)
+    # Убираем оставшиеся мусорные фрагменты: "[123456]", "#12"
+    text = re.sub(r"\[\d+\]", "", text)
+    text = re.sub(r"\s#\d+\b", "", text)
+    # Схлопываем пробелы
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _extract_pure_text(block: Tag) -> str:
+    """
+    Извлекает текст из блока поста.
+    Сначала удаляет из DOM мусорные дочерние теги,
+    потом берёт текст самого глубокого содержательного элемента.
+    """
+    # Удаляем из DOM всё лишнее
+    for junk_sel in [
+        "blockquote", ".signature", ".quote", ".b-quote", ".reply",
+        "nav", ".pagination", ".breadcrumb",
+        ".b-topic__controls", ".b-topic__navigation", ".b-topic__related",
+        ".b-forum__wisdom", "[class*='related']", "[class*='similar']",
+        "[class*='controls']", "[class*='navigation']",
+        ".b-topic__username",  # имя пользователя
+        ".b-topic__date",      # дата
+    ]:
+        for el in block.select(junk_sel):
+            el.decompose()
+
+    # Пробуем найти именно текстовый контейнер поста
+    text_el = (
+        block.select_one("div.b-topic__message-text") or
+        block.select_one("div.message__text") or
+        block.select_one("div.post-content") or
+        block.select_one(".message-text") or
+        block.select_one(".b-topic__text") or
+        block
+    )
+
+    raw = normalize_text(text_el.get_text(separator=" "))
+    return _strip_metadata(raw)
+
+
+# ─── Парсинг постов из треда ─────────────────────────────────────────────────
 
 def _has_next_page(soup: BeautifulSoup) -> bool:
     return bool(
@@ -89,39 +232,6 @@ def _has_next_page(soup: BeautifulSoup) -> bool:
     )
 
 
-def iter_thread_urls(session: requests.Session, section: str,
-                     max_threads: int) -> Iterator[str]:
-    section_url = f"{config.BASE_URL}/{section}"
-    threads_seen = 0
-    page = 1
-
-    while threads_seen < max_threads:
-        url = section_url if page == 1 else f"{section_url}?page={page}"
-        soup = get_page(session, url)
-        if soup is None:
-            break
-
-        # Передаём section чтобы фильтровать только свои треды
-        links = _extract_thread_links(soup, section)
-        logger.debug(f"[{section}] стр.{page}: найдено {len(links)} тредов")
-
-        if not links:
-            break
-
-        for href in links:
-            if threads_seen >= max_threads:
-                return
-            yield href
-            threads_seen += 1
-
-        if not _has_next_page(soup):
-            break
-        page += 1
-        polite_delay()
-
-
-# ─── Парсинг постов ──────────────────────────────────────────────────────────
-
 def _extract_thread_title(soup: BeautifulSoup) -> str:
     for sel in ("h1.topic__title", "h1.forumTopicTitle", "h1.post-title", "h1"):
         el = soup.select_one(sel)
@@ -130,93 +240,60 @@ def _extract_thread_title(soup: BeautifulSoup) -> str:
     return ""
 
 
-def _extract_post_text(block: BeautifulSoup) -> str:
-    for tag in block.select("blockquote, .signature, .quote, .b-quote, .reply"):
-        tag.decompose()
-    text_el = (
-        block.select_one("div.message__text") or
-        block.select_one("div.post-content") or
-        block.select_one("div.b-topic__message-text") or
-        block.select_one(".message-text") or
-        block.select_one(".text") or
-        block
-    )
-    return normalize_text(text_el.get_text(separator=" "))
-
-
-def _extract_post_date(block: BeautifulSoup) -> str:
-    for sel in ("time[datetime]", "span.date", "span.post-date",
-                ".b-topic__date", ".message-date"):
-        el = block.select_one(sel)
-        if el:
-            return el.get("datetime") or normalize_text(el.get_text())
-    return ""
-
-
 def _url_to_id(url: str) -> str:
     m = re.search(r"/(\d+)", url)
     return m.group(1) if m else url
 
 
-def _make_post_id(thread_url: str, text: str, date: str) -> str:
-    return hashlib.md5(f"{thread_url}|{date}|{text[:100]}".encode()).hexdigest()[:12]
+def _make_post_id(thread_url: str, text: str) -> str:
+    return hashlib.md5(f"{thread_url}|{text[:120]}".encode()).hexdigest()[:12]
 
 
-def _extract_posts(soup: BeautifulSoup, thread_url: str,
-                   thread_title: str, section: str) -> List[Dict[str, Any]]:
-    """
-    Ищет блоки постов широким набором селекторов.
-    Дополнительно фильтрует по минимальной длине текста.
-    """
-    # Пробуем специфичные селекторы сначала, потом широкие
-    post_blocks = None
+def _extract_posts_from_page(soup: BeautifulSoup, thread_url: str,
+                              section: str) -> List[Dict[str, Any]]:
+    thread_title = _extract_thread_title(soup)
+
+    # Специфичные селекторы → широкий fallback
+    post_blocks: List[Tag] = []
     for selector in [
+        "div.card__comment",   # основной селектор постов (подтверждён диагностикой)
+        "div.card__text",      # текст первого поста / ОП
         "div.b-topic__message",
+        "li.b-messages__item",
         "div.forum-message",
         "div.topic-message",
-        "li.b-messages__item",
-        "div[class*='topic__message']",
-        "div[class*='forum-message']",
-        "div.message",
-        "article",
     ]:
         found = soup.select(selector)
         if found:
             post_blocks = found
-            logger.debug(f"Селектор постов: '{selector}' → {len(found)} блоков")
+            logger.debug(f"Selector '{selector}': {len(found)} blocks")
             break
 
-    # Последний резерв — любой блок с достаточным текстом
-    if not post_blocks:
-        post_blocks = [
-            tag for tag in soup.find_all(["div", "li", "article"])
-            if len(tag.get_text(strip=True)) > 50
-            and not tag.find_parent(["nav", "header", "footer", "aside"])
-        ]
-        logger.debug(f"Резервный парсинг: {len(post_blocks)} блоков")
-
     posts = []
-    seen_texts = set()
+    seen_texts: set = set()  # дедупликация внутри страницы
+
     for block in post_blocks:
-        text = _extract_post_text(block)
-        if len(text) < 30:
+        text = _extract_pure_text(block)
+
+        if len(text) < _MIN_LEN:
             continue
-        # Дедупликация по тексту внутри треда
-        key = text[:80]
+
+        # Ключ дедупликации — первые 100 символов текста
+        key = text[:100]
         if key in seen_texts:
             continue
         seen_texts.add(key)
 
-        date_str = _extract_post_date(block)
         posts.append({
-            "post_id":      _make_post_id(thread_url, text, date_str),
+            "post_id":      _make_post_id(thread_url, text),
             "thread_id":    _url_to_id(thread_url),
             "thread_title": thread_title,
             "section":      section,
-            "post_date":    date_str,
+            "post_date":    "",
             "post_text":    text,
             "url":          thread_url,
         })
+
     return posts
 
 
@@ -227,7 +304,7 @@ def iter_posts_in_thread(session: requests.Session,
         soup = get_page(session, url)
         if soup is None:
             break
-        posts = _extract_posts(soup, thread_url, _extract_thread_title(soup), section)
+        posts = _extract_posts_from_page(soup, thread_url, section)
         if not posts:
             break
         yield from posts
@@ -236,52 +313,29 @@ def iter_posts_in_thread(session: requests.Session,
         polite_delay()
 
 
-# ─── Сбор из одного раздела ──────────────────────────────────────────────────
-
-def collect_from_section(session: requests.Session, section: str,
-                         quota: int, seen_ids: set,
-                         apply_filter: bool) -> List[Dict[str, Any]]:
-    collected = []
-    for thread_url in iter_thread_urls(session, section,
-                                       max_threads=config.MAX_THREADS_PER_SECTION):
-        if len(collected) >= quota:
-            break
-        for post in iter_posts_in_thread(session, thread_url, section):
-            if len(collected) >= quota:
-                break
-            if post["post_id"] in seen_ids:
-                continue
-            seen_ids.add(post["post_id"])
-            if apply_filter and not contains_target(post["post_text"]):
-                continue
-            post["contexts"] = extract_context(post["post_text"])
-            collected.append(post)
-        polite_delay()
-    return collected
-
-
 # ─── Основной сбор ───────────────────────────────────────────────────────────
+
+def _guess_section(url: str) -> str:
+    m = re.search(r"woman\.ru/([^/]+/[^/]+)/thread", url)
+    return m.group(1) if m else "unknown"
+
 
 def run_scraper(
     limit: int,
     sections: List[str],
     apply_filter: bool = True,
+    use_search: bool = True,
     output_dir: Optional[str] = None,
     filename: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+
+    import time as _time
+    _start = _time.time()
 
     if output_dir:
         config.OUTPUT_DIR = output_dir
     if filename:
         config.OUTPUT_FILENAME = filename
-
-    n = len(sections)
-    base_quota = limit // n
-    quotas = {s: base_quota + (1 if i < limit % n else 0)
-              for i, s in enumerate(sections)}
-
-    import time as _time
-    _start = _time.time()
 
     print()
     print(f"  Scraping started, searching contexts: {limit}")
@@ -289,35 +343,63 @@ def run_scraper(
 
     session = make_session()
     seen_ids: set = set()
+    seen_contexts: set = set()  # глобальная дедупликация контекстов
     all_posts: List[Dict[str, Any]] = []
-    deficit = 0
 
-    # Первый проход — каждый раздел по квоте, дефицит передаётся вперёд
-    for section, quota in quotas.items():
-        target = quota + deficit
-        got = collect_from_section(session, section, target, seen_ids, apply_filter)
-        shortfall = target - len(got)
-        deficit = shortfall if shortfall > 0 else 0
-        all_posts.extend(got)
-        print_progress(len(all_posts), limit)
+    def _try_add(post: Dict) -> bool:
+        if post["post_id"] in seen_ids:
+            return False
+        seen_ids.add(post["post_id"])
+        if apply_filter and not contains_target(post["post_text"]):
+            return False
+        ctxs = [c for c in extract_context(post["post_text"])
+                if c not in seen_contexts]
+        for c in ctxs:
+            seen_contexts.add(c)
+        if not ctxs:
+            return False
+        post["contexts"] = ctxs
+        all_posts.append(post)
+        return True
 
-    # Второй проход — добираем из рабочих разделов если не хватает
-    if len(all_posts) < limit:
-        remaining = limit - len(all_posts)
-        logger.debug(f"Добор: нужно ещё {remaining} постов")
-        for section in sections:
-            if remaining <= 0:
+    # ── 1. Поиск по сайту ────────────────────────────────────────────────
+    if use_search:
+        for thread_url in iter_thread_urls_from_search(
+                session, max_threads=config.MAX_THREADS_PER_SECTION * 2):
+            if len(all_posts) >= limit:
                 break
-            extra = collect_from_section(session, section, remaining,
-                                         seen_ids, apply_filter)
-            all_posts.extend(extra)
-            remaining -= len(extra)
+            section = _guess_section(thread_url)
+            for post in iter_posts_in_thread(session, thread_url, section):
+                if len(all_posts) >= limit:
+                    break
+                _try_add(post)
             print_progress(len(all_posts), limit)
+            polite_delay()
+
+    # ── 2. Fallback: прямые разделы ──────────────────────────────────────
+    if len(all_posts) < limit:
+        for section in sections:
+            if len(all_posts) >= limit:
+                break
+            for thread_url in iter_thread_urls_from_section(
+                    session, section,
+                    max_threads=config.MAX_THREADS_PER_SECTION):
+                if len(all_posts) >= limit:
+                    break
+                for post in iter_posts_in_thread(session, thread_url, section):
+                    if len(all_posts) >= limit:
+                        break
+                    _try_add(post)
+                print_progress(len(all_posts), limit)
+                polite_delay()
 
     elapsed = int(_time.time() - _start)
     total = len(all_posts)
+    pct = min(100, int(total / limit * 100)) if limit else 0
+    filled = pct // 10
+    bar = "█" * filled + "░" * (10 - filled)
 
-    print(f"\r  {'█' * 10} {total}/{limit} (100%)" if total >= limit else "")
+    print(f"\r  {bar} {total}/{limit} ({pct}%)")
     print()
     print(f"  Collected: {total} in {elapsed} seconds")
     print()
@@ -330,23 +412,20 @@ def run_scraper(
     return all_posts
 
 
-def _ts() -> str:
-    from datetime import datetime
-    return datetime.now().strftime("%H:%M:%S")
-
-
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Скрейпер woman.ru — портрет слова «мужчина»",
+        description="woman.ru scraper — portrait of the word «мужчина»",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("--limit", type=int, default=config.DEFAULT_POST_LIMIT,
-                        metavar="N")
+                        metavar="N", help="Max posts to collect")
     parser.add_argument("--sections", nargs="+", default=config.FORUM_SECTIONS,
                         metavar="SECTION")
     parser.add_argument("--no-filter", action="store_true")
+    parser.add_argument("--no-search", action="store_true",
+                        help="Skip search, use sections only")
     parser.add_argument("--output-dir", default=None, metavar="PATH")
     parser.add_argument("--filename", default=None, metavar="NAME")
     return parser.parse_args()
@@ -358,6 +437,7 @@ if __name__ == "__main__":
         limit=args.limit,
         sections=args.sections,
         apply_filter=not args.no_filter,
+        use_search=not args.no_search,
         output_dir=args.output_dir,
         filename=args.filename,
     )
